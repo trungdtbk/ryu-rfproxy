@@ -4,6 +4,7 @@ import logging
 import pymongo as mongo
 
 from ofinterface import *
+from oslo.config import cfg
 
 import rflib.ipc.IPC as IPC
 import rflib.ipc.MongoIPC as MongoIPC
@@ -19,8 +20,10 @@ from ryu.lib.mac import *
 from ryu.lib.dpid import *
 from ryu.lib import hub
 from ryu.controller import dpset
+from ryu.utils import hex_array
 
 log = logging.getLogger('ryu.app.rfproxy')
+CONF = cfg.CONF
 
 ADD = 1
 DEL = 2
@@ -101,7 +104,7 @@ datapaths = Datapaths()
 class RFProcessor(IPC.IPCMessageProcessor):
     def process(self, from_, to, channel, msg):
         type_ = msg.get_type()
-        if type_ == ROUTE_MOD:
+        if type_ == ROUTE_MOD and CONF.ofp_role != 'slave':
             dp = datapaths.get(msg.get_id())
             ofmsg = create_flow_mod(dp, msg.get_mod(), msg.get_matches(),
                                     msg.get_actions(), msg.get_options())
@@ -130,6 +133,7 @@ class RFProxy(app_manager.RyuApp):
         super(RFProxy, self).__init__(*args, **kwargs)
 
         ID = 0
+        self.role = parse_role_request(CONF.ofp_role, dp)
         self.ipc = MongoIPC.MongoIPCMessageService(MONGO_ADDRESS,
                                                    MONGO_DB_NAME, str(ID),
                                                    hub_thread_wrapper,
@@ -144,6 +148,7 @@ class RFProxy(app_manager.RyuApp):
         dp = ev.dp
         dpid = dp.id
         ports = dp.ports
+        send_role_request(self.role, dp)
         if ev.enter:
             log.info("Datapath is up (dp_id=%s)", dpid_to_str(dpid))
             datapaths.register(dp)
@@ -203,3 +208,14 @@ class RFProxy(app_manager.RyuApp):
             else:
                 log.info("Unmapped datapath port (dp_id=%s, dp_port=%d)",
                          dpid_to_str(dpid), in_port)
+
+    @set_ev_cls(ofp_event.EventOFPRoleReply, MAIN_DISPATCHER)
+    def role_reply_handler(self, ev):
+        log.info('OFPRoleReply received')
+
+    @set_ev_cls(ofp_event.EventOFPErrorMsg,
+                [HANDSHAKE_DISPATCHER, CONFIG_DISPATCHER, MAIN_DISPATCHER])
+    def error_msg_handler(self, ev):
+        msg = ev.msg
+        log.info('OFPErrorMsg received: type=0x%02x code=0x%02x ''message=%s',
+                 msg.type, msg.code, hex_array(msg.data))

@@ -152,3 +152,38 @@ def send_pkt_out(dp, port, msg_data):
     packet_out = dp.ofproto_parser.OFPPacketOut(dp, buffer_id, in_port,
                                                 actions, msg_data)
     dp.send_msg(packet_out)
+
+
+def parse_role_request(role_request, dp):
+    """Returns controller role code for given role_request.
+    default -- No change.
+
+    Keyword arguments:
+    role_request -- Role request string.
+    dp -- datapath for the device.
+
+    """
+    ofp = dp.ofproto
+    if role_request == "master":
+        role = ofp.OFPCR_ROLE_MASTER
+    elif role_request == "slave":
+        role = ofp.OFPCR_ROLE_SLAVE
+    elif role_request == "equal":
+        role = ofp.OFPCR_ROLE_EQUAL
+    else:
+        role = ofp.OFPCR_ROLE_NOCHANGE
+    return role
+
+
+def send_role_request(role, dp):
+    """Send controller role to the device.
+
+    Keyword arguments:
+    role -- controller role.
+    dp -- datapath for the device.
+
+    """
+    ofp_parser = dp.ofproto_parser
+
+    req = ofp_parser.OFPRoleRequest(dp, role, 0)
+    dp.send_msg(req)
