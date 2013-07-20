@@ -133,7 +133,7 @@ class RFProxy(app_manager.RyuApp):
         super(RFProxy, self).__init__(*args, **kwargs)
 
         ID = 0
-        self.role = parse_role_request(CONF.ofp_role, dp)
+        self.role = CONF.ofp_role
         self.ipc = MongoIPC.MongoIPCMessageService(MONGO_ADDRESS,
                                                    MONGO_DB_NAME, str(ID),
                                                    hub_thread_wrapper,
@@ -148,7 +148,8 @@ class RFProxy(app_manager.RyuApp):
         dp = ev.dp
         dpid = dp.id
         ports = dp.ports
-        send_role_request(self.role, dp)
+        ofp_role = parse_role_request(self.role, dp)
+        send_role_request(ofp_role, dp)
         if ev.enter:
             log.info("Datapath is up (dp_id=%s)", dpid_to_str(dpid))
             datapaths.register(dp)
