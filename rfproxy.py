@@ -148,15 +148,12 @@ class RFProxy(app_manager.RyuApp):
         stats_request = dp.ofproto_parser.OFPPortDescStatsRequest(dp, 0)
         dp.send_msg(stats_request)
 
-    # TODO: update event handler for ryu > 2.0
-    #@set_ev_cls(ofp_event.EventOFPPortDescStatsReply, MAIN_DISPATCHER)
-    @set_ev_cls(ofp_event.EventOFPMultipartReply, MAIN_DISPATCHER)
-    def handler_stats_reply_handler(self, ev):
+    @set_ev_cls(ofp_event.EventOFPPortDescStatsReply, MAIN_DISPATCHER)
+    def handler_desc_stats_reply(self, ev):
         msg = ev.msg
-        if msg.type == ofproto.OFPMP_PORT_DESC:
-            dp = msg.datapath
-            ports = msg.body
-            register_ports(dp, ports)
+        dp = msg.datapath
+        ports = msg.body
+        register_ports(dp, ports)
 
     @set_ev_cls(event.EventSwitchLeave, MAIN_DISPATCHER)
     def handler_datapath_leave(self, ev):
@@ -172,7 +169,7 @@ class RFProxy(app_manager.RyuApp):
         msg = ev.msg
         dp = msg.datapath
         dpid = dp.id
-        pkt, _ = ethernet.parser(msg.data)
+        pkt, _, _ = ethernet.parser(msg.data)
 
         for f in msg.match.fields:
             if f.header == dp.ofproto.OXM_OF_IN_PORT:
