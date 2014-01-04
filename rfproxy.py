@@ -153,7 +153,7 @@ class RFProxy(app_manager.RyuApp):
         msg = ev.msg
         dp = msg.datapath
         ports = msg.body
-        register_ports(dp, ports)
+        self.register_ports(dp, ports)
 
     @set_ev_cls(event.EventSwitchLeave, MAIN_DISPATCHER)
     def handler_datapath_leave(self, ev):
