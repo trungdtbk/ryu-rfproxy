@@ -158,7 +158,7 @@ def send_pkt_out(dp, port, msg_data):
     actions = []
     actions.append(dp.ofproto_parser.OFPActionOutput(port, len(msg_data)))
     buffer_id = OFP_BUFFER_NONE
-    in_port = dp.ofproto.OFPP_ANY
+    in_port = dp.ofproto.OFPP_CONTROLLER
     packet_out = dp.ofproto_parser.OFPPacketOut(dp, buffer_id, in_port,
                                                 actions, msg_data)
     dp.send_msg(packet_out)
