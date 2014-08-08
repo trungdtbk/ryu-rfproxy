@@ -1,4 +1,4 @@
-import logging
+from rflogging import log
 
 from rflib.defs import *
 from binascii import *
@@ -7,8 +7,6 @@ from rflib.types.Action import *
 from rflib.types.Option import *
 
 OFP_BUFFER_NONE = 0xffffffff
-log = logging.getLogger('ryu.app.rfproxy')
-
 
 def create_default_flow_mod(dp, cookie=0, cookie_mask=0, table_id=0,
                             command=None, idle_timeout=0, hard_timeout=0,
