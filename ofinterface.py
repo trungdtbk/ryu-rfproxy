@@ -40,6 +40,9 @@ def actions_from_routemod(ofproto, parser, action_tlvs):
         elif action._type == RFAT_GOTO:
             table_id = bin_to_int(action._value)
             instructions.append(parser.OFPInstructionGotoTable(table_id))
+        elif action._type == RFAT_STRIP_VLAN_DEFERRED:
+            instructions.append(parser.OFPInstructionActions(
+                ofproto.OFPIT_WRITE_ACTIONS, (parser.OFPActionPopVlan(),)))
         elif action.optional():
             log.info("Dropping unsupported Action (type: %s)" % action._type)
         else:
