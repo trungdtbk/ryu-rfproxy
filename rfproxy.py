@@ -77,6 +77,8 @@ class RFProcessor(IPC.IPCMessageProcessor):
         self.table = table
 
     def send_msg(self, dp, ofmsg):
+        while dp.send_q.qsize() > 0:
+            hub.sleep(0)
         dp.send_msg(ofmsg)
         hub.sleep(0)
 
