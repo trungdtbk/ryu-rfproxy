@@ -81,6 +81,8 @@ class RFProcessor(IPC.IPCMessageProcessor):
             hub.sleep(0)
         dp.send_msg(ofmsg)
         hub.sleep(0)
+        log.info("ofp_flow_mod %s was sent to datapath (dp_id = %x)",
+                 str(ofmsg), dp.id)
 
     def process(self, from_, to, channel, msg):
         type_ = msg.get_type()
@@ -111,9 +113,6 @@ class RFProcessor(IPC.IPCMessageProcessor):
                 log.warning("Error sending ofmsg:")
                 log.warning(type(e))
                 log.warning(str(e))
-            else:
-                log.info("ofp_flow_mod was sent to datapath (dp_id = %s)",
-                         dpid_to_str(msg.get_id()))
 
             if msg.get_mod() in (RMT_DELETE, RMT_CONTROLLER, RMT_ADD_GROUP, RMT_DELETE_GROUP):
                 dp.send_barrier()
