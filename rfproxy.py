@@ -1,7 +1,7 @@
 import struct
 import threading
-import logging
 
+from rflogging import log
 from ofinterface import *
 
 import rflib.ipc.IPC as IPC
@@ -20,9 +20,6 @@ from ryu.lib.mac import *
 from ryu.lib.dpid import *
 from ryu.lib import hub
 from ryu.lib.packet.ethernet import ethernet
-
-log = logging.getLogger('ryu.app.rfproxy')
-
 
 # Association table
 class Table:
