@@ -8,59 +8,134 @@ from rflib.types.Option import *
 
 OFP_BUFFER_NONE = 0xffffffff
 
+
+def actions_from_routemod(ofproto, parser, action_tlvs):
+    instructions = []
+    actions = []
+    for a in action_tlvs:
+        action = Action.from_dict(a)
+        if action._type == RFAT_SET_ETH_SRC:
+            srcMac = action._value
+            src = parser.OFPMatchField.make(ofproto.OXM_OF_ETH_SRC, srcMac)
+            actions.append(parser.OFPActionSetField(src))
+        elif action._type == RFAT_SET_ETH_DST:
+            dstMac = action._value
+            dst = parser.OFPMatchField.make(ofproto.OXM_OF_ETH_DST, dstMac)
+            actions.append(parser.OFPActionSetField(dst))
+        elif action._type == RFAT_SET_VLAN_ID:
+            actions.append(parser.OFPActionPopVlan())
+            actions.append(parser.OFPActionPushVlan(0x8100));
+            vlan_id = bin_to_int(action._value)
+            vlan = parser.OFPMatchField.make(ofproto.OXM_OF_VLAN_VID, vlan_id)
+            actions.append(parser.OFPActionSetField(vlan))
+            pcp = parser.OFPMatchField.make(ofproto.OXM_OF_VLAN_PCP, 0)
+            actions.append(parser.OFPActionSetField(pcp))
+        elif action._type == RFAT_OUTPUT:
+            port = bin_to_int(action._value)
+            actions.append(parser.OFPActionOutput(port, ofproto.OFPCML_MAX))
+        elif action._type == RFAT_GROUP:
+            group = bin_to_int(action._value)
+            actions.append(parser.OFPActionGroup(group))
+        elif action._type == RFAT_GOTO:
+            table_id = bin_to_int(action._value)
+            instructions.append(parser.OFPInstructionGotoTable(table_id))
+        elif action._type == RFAT_STRIP_VLAN_DEFERRED:
+            instructions.append(parser.OFPInstructionActions(
+                ofproto.OFPIT_WRITE_ACTIONS, (parser.OFPActionPopVlan(),)))
+        elif action.optional():
+            log.info("Dropping unsupported Action (type: %s)" % action._type)
+        else:
+            log.warning("Failed to serialise Action (type: %s)" % action._type)
+    return (actions, instructions)
+
+
+def create_group_mod(dp, command, group, action_tlvs, weight=0,type_=None):
+    ofproto = dp.ofproto
+    parser = dp.ofproto_parser
+
+    if command == RMT_ADD_GROUP:
+        command = ofproto.OFPGC_ADD
+    elif command == RMT_DELETE_GROUP:
+        command = ofproto.OFPGC_DELETE
+
+    if type_ is None:
+        type_ = ofproto.OFPGT_INDIRECT
+
+    if group == 0:
+        group = ofproto.OFPG_ALL
+
+    buckets = []
+    actions, _ = actions_from_routemod(ofproto, parser, action_tlvs)
+    buckets = [parser.OFPBucket(weight, actions=actions)]
+
+    return parser.OFPGroupMod(dp, command, type_, group, buckets)
+
+
 def create_default_flow_mod(dp, cookie=0, cookie_mask=0, table_id=0,
                             command=None, idle_timeout=0, hard_timeout=0,
-                            priority=PRIORITY_LOWEST,
-                            buffer_id=0xffffffff, match=None, actions=None,
+                            priority=None,
+                            buffer_id=OFP_BUFFER_NONE, match=None, actions=None,
                             inst_type=None, out_port=None, out_group=None,
                             flags=0, inst=[]):
+    ofproto = dp.ofproto
+    parser = dp.ofproto_parser
 
     if command is None:
-        command = dp.ofproto.OFPFC_ADD
+        command = ofproto.OFPFC_ADD
 
     if inst is []:
         if inst_type is None:
-            inst_type = dp.ofproto.OFPIT_APPLY_ACTIONS
+            inst_type = ofproto.OFPIT_APPLY_ACTIONS
 
         if actions is not None:
-            inst = [dp.ofproto_parser.OFPInstructionActions(inst_type,
-                                                            actions)]
+            inst = [parser.OFPInstructionActions(inst_type, actions)]
 
     if match is None:
-        match = dp.ofproto_parser.OFPMatch()
+        match = parser.OFPMatch()
 
     if out_port is None:
-        out_port = dp.ofproto.OFPP_ANY
+        out_port = ofproto.OFPP_ANY
 
     if out_group is None:
-        out_group = dp.ofproto.OFPG_ANY
+        out_group = ofproto.OFPG_ANY
 
-    return dp.ofproto_parser.OFPFlowMod(dp, cookie, cookie_mask,
-                                        table_id, command,
-                                        idle_timeout, hard_timeout,
-                                        priority, buffer_id,
-                                        out_port, out_group,
-                                        flags, match, inst)
-
-
-def create_flow_mod(dp, mod, matches, actions, options):
-    flow_mod = create_default_flow_mod(dp)
-    add_command(flow_mod, mod)
-    add_matches(flow_mod, matches)
-    add_actions(flow_mod, actions)
-    add_options(flow_mod, options)
-    return flow_mod
+    return parser.OFPFlowMod(dp, cookie, cookie_mask,
+                             table_id, command,
+                             idle_timeout, hard_timeout,
+                             priority, buffer_id,
+                             out_port, out_group,
+                             flags, match, inst)
 
 
-def add_command(flow_mod, mod):
+def create_flow_mod(dp, table_id, mod, matches, actions, options):
+    ofproto = dp.ofproto
+    parser = dp.ofproto_parser
+    flow_mod = None
+    if mod == RMT_DELETE and table_id == 0 and len(matches) == 0 and len(actions) == 0:
+        return parser.OFPFlowMod(dp, 0, 0,
+                                 ofproto.OFPTT_ALL, ofproto.OFPFC_DELETE,
+                                 0, 0, 0, OFP_BUFFER_NONE,
+                                 ofproto.OFPP_ANY,
+                                 ofproto.OFPG_ANY,
+                                 0, parser.OFPMatch(), [])
+    else:
+        command = add_command(ofproto, mod)
+        flow_mod = create_default_flow_mod(dp, table_id=table_id, command=command)
+        add_matches(flow_mod, matches)
+        add_actions(flow_mod, actions)
+        add_options(flow_mod, options)
+        return flow_mod
+
+
+def add_command(ofproto, mod):
     if mod == RMT_ADD:
-        pass
+        return ofproto.OFPFC_ADD
     elif mod == RMT_DELETE:
-        flow_mod.command = flow_mod.datapath.ofproto.OFPFC_DELETE_STRICT
+        return ofproto.OFPFC_DELETE_STRICT
+    return None
 
 
 def add_matches(flow_mod, matches):
-    ip_proto = 0
     for m in matches:
         match = Match.from_dict(m)
         if match._type == RFMT_IPV4:
@@ -82,24 +157,17 @@ def add_matches(flow_mod, matches):
         elif match._type == RFMT_ETHERTYPE:
             flow_mod.match.set_dl_type(bin_to_int(match._value))
         elif match._type == RFMT_NW_PROTO:
-            ip_proto = bin_to_int(match._value)
-            flow_mod.match.set_ip_proto(ip_proto)
+            flow_mod.match.set_ip_proto(bin_to_int(match._value))
         elif match._type == RFMT_TP_SRC:
-            if ip_proto == IPPROTO_TCP:
-                flow_mod.match.set_tcp_src(bin_to_int(match._value))
-            elif ip_proto == IPPROTO_UDP:
-                flow_mod.match.set_udp_src(bin_to_int(match._value))
-            else:
-                log.warning("Failed to match L4 proto src_port")
+            flow_mod.match.set_ip_proto(IPPROTO_TCP)
+            flow_mod.match.set_tcp_src(bin_to_int(match._value))
         elif match._type == RFMT_TP_DST:
-            if ip_proto == IPPROTO_TCP:
-                flow_mod.match.set_tcp_dst(bin_to_int(match._value))
-            elif ip_proto == IPPROTO_UDP:
-                flow_mod.match.set_udp_dst(bin_to_int(match._value))
-            else:
-                log.warning("Failed to match L4 proto dst_port")
+            flow_mod.match.set_ip_proto(IPPROTO_TCP)
+            flow_mod.match.set_tcp_dst(bin_to_int(match._value))
         elif match._type == RFMT_IN_PORT:
             flow_mod.match.set_in_port(bin_to_int(match._value))
+        elif match._type == RFMT_VLAN_ID:
+            flow_mod.match.set_vlan_vid(bin_to_int(match._value))
         elif TLV.optional(match):
             log.info("Dropping unsupported Match (type: %s)" % match._type)
         else:
@@ -110,28 +178,10 @@ def add_matches(flow_mod, matches):
 def add_actions(flow_mod, action_tlvs):
     parser = flow_mod.datapath.ofproto_parser
     ofproto = flow_mod.datapath.ofproto
-    actions = []
-    for a in action_tlvs:
-        action = Action.from_dict(a)
-        if action._type == RFAT_OUTPUT:
-            port = bin_to_int(action._value)
-            a = parser.OFPActionOutput(port, ofproto.OFPCML_MAX)
-            actions.append(a)
-        elif action._type == RFAT_SET_ETH_SRC:
-            srcMac = action._value
-            src = parser.OFPMatchField.make(ofproto.OXM_OF_ETH_SRC, srcMac)
-            actions.append(parser.OFPActionSetField(src))
-        elif action._type == RFAT_SET_ETH_DST:
-            dstMac = action._value
-            dst = parser.OFPMatchField.make(ofproto.OXM_OF_ETH_DST, dstMac)
-            actions.append(parser.OFPActionSetField(dst))
-        elif action.optional():
-            log.info("Dropping unsupported Action (type: %s)" % action._type)
-        else:
-            log.warning("Failed to serialise Action (type: %s)" % action._type)
-            return
-    inst = parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions)
-    flow_mod.instructions = [inst]
+    actions, instructions = actions_from_routemod(ofproto, parser, action_tlvs)
+    if len(instructions) == 0:
+        instructions = [ parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS, actions) ]
+    flow_mod.instructions = instructions
 
 
 def add_options(flow_mod, options):
@@ -153,10 +203,14 @@ def add_options(flow_mod, options):
 
 
 def send_pkt_out(dp, port, msg_data):
-    actions = []
-    actions.append(dp.ofproto_parser.OFPActionOutput(port, len(msg_data)))
+    ofproto = dp.ofproto
+    parser = dp.ofproto_parser
+    actions = [parser.OFPActionOutput(port, len(msg_data))]
     buffer_id = OFP_BUFFER_NONE
-    in_port = dp.ofproto.OFPP_CONTROLLER
-    packet_out = dp.ofproto_parser.OFPPacketOut(dp, buffer_id, in_port,
-                                                actions, msg_data)
+    in_port = ofproto.OFPP_CONTROLLER
+    packet_out = parser.OFPPacketOut(dp,
+                                     buffer_id,
+                                     in_port,
+                                     actions,
+                                     msg_data)
     dp.send_msg(packet_out)
