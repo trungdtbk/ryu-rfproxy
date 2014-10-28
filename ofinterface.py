@@ -22,8 +22,9 @@ def actions_from_routemod(ofproto, parser, action_tlvs):
             dstMac = action._value
             dst = parser.OFPMatchField.make(ofproto.OXM_OF_ETH_DST, dstMac)
             actions.append(parser.OFPActionSetField(dst))
-        elif action._type == RFAT_SET_VLAN_ID:
-            actions.append(parser.OFPActionPopVlan())
+        elif action._type in (RFAT_SET_VLAN_ID, RFAT_SWAP_VLAN_ID):
+            if action._type == RFAT_SWAP_VLAN_ID:
+                actions.append(parser.OFPActionPopVlan())
             actions.append(parser.OFPActionPushVlan(0x8100));
             vlan_id = bin_to_int(action._value)
             vlan = parser.OFPMatchField.make(ofproto.OXM_OF_VLAN_VID, vlan_id)
