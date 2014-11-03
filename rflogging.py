@@ -8,3 +8,4 @@ formatter  = logging.Formatter(log_format, '%b %d %H:%M:%S')
 handler.setFormatter(formatter)
 log.addHandler(handler)
 log.propagate = 0
+log.setLevel(logging.INFO)
