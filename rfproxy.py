@@ -68,9 +68,10 @@ class HubThreading(object):
 # IPC message Processing
 class RFProcessor(IPC.IPCMessageProcessor):
 
-    def __init__(self, switches, table):
+    def __init__(self, switches, table, ipc_send):
         self._switches = switches
         self.table = table
+        self.ipc_send = ipc_send
 
     def send_msg(self, dp, ofmsg):
         while dp.send_q.qsize() > 0:
@@ -113,6 +114,8 @@ class RFProcessor(IPC.IPCMessageProcessor):
             if msg.get_mod() in (RMT_DELETE, RMT_CONTROLLER, RMT_ADD_GROUP, RMT_DELETE_GROUP):
                 dp.send_barrier()
 
+            self.ipc_send(RFSERVER_RFPROXY_CHANNEL, RFSERVER_ID, msg)
+
         elif type_ == DATA_PLANE_MAP:
             dp_id = msg.get_dp_id()
             dp_port = msg.get_dp_port()
@@ -138,12 +141,18 @@ class RFProxy(app_manager.RyuApp):
         self.ID = 0
         self.table = Table()
         self.switches = kwargs['switches']
-        self.rfprocess = RFProcessor(self.switches, self.table)
-
         self.ipc = IPCService.for_proxy(str(self.ID), HubThreading)
+        self.ipc_lock = threading.Lock()
+        self.rfprocess = RFProcessor(self.switches, self.table, self.ipc_send)
+
         self.ipc.listen(RFSERVER_RFPROXY_CHANNEL, RFProtocolFactory(),
                         self.rfprocess, False)
         log.info("RFProxy running.")
+
+    def ipc_send(self, channel, channel_id, msg):
+        self.ipc_lock.acquire()
+        self.ipc.send(channel, channel_id, msg)
+        self.ipc_lock.release()
 
     #Event handlers
     @set_ev_cls(event.EventSwitchEnter, MAIN_DISPATCHER)
@@ -155,7 +164,7 @@ class RFProxy(app_manager.RyuApp):
             if port <= dp.ofproto.OFPP_MAX:
                 msg = DatapathPortRegister(ct_id=self.ID, dp_id=dp_id,
                                            dp_port=port)
-                self.ipc.send(RFSERVER_RFPROXY_CHANNEL, RFSERVER_ID, msg)
+                self.ipc_send(RFSERVER_RFPROXY_CHANNEL, RFSERVER_ID, msg)
                 log.info("Registering datapath port (dp_id=%s, dp_port=%d)",
                          dpid_to_str(dp_id), port)
 
@@ -166,7 +175,7 @@ class RFProxy(app_manager.RyuApp):
         log.info("Datapath is down (dp_id=%s)", dpid_to_str(dp_id))
         self.table.delete_dp(dp_id)
         msg = DatapathDown(ct_id=self.ID, dp_id=dp_id)
-        self.ipc.send(RFSERVER_RFPROXY_CHANNEL, RFSERVER_ID, msg)
+        self.ipc_send(RFSERVER_RFPROXY_CHANNEL, RFSERVER_ID, msg)
 
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def on_packet_in(self, ev):
@@ -205,7 +214,7 @@ class RFProxy(app_manager.RyuApp):
                      dpid_to_str(dp_id), in_port)
             msg = VirtualPlaneMap(vm_id=vm_id, vm_port=vm_port, vs_id=dp_id,
                                   vs_port=in_port)
-            self.ipc.send(RFSERVER_RFPROXY_CHANNEL, RFSERVER_ID, msg)
+            self.ipc_send(RFSERVER_RFPROXY_CHANNEL, RFSERVER_ID, msg)
             return
 
         # Packet came from RFVS
