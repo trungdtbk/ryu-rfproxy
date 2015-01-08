@@ -108,10 +108,20 @@ def create_default_flow_mod(dp, cookie=0, cookie_mask=0, table_id=0,
                              flags, match, inst)
 
 
-def create_flow_mod(dp, table_id, mod, matches, actions, options):
+def create_flow_mod(dp, table_id, mod, matches, actions, options, outport=None):
     ofproto = dp.ofproto
     parser = dp.ofproto_parser
     flow_mod = None
+    
+    print outport
+    if outport is not None:
+        return parser.OFPFlowMod(dp, 0, 0,
+                                 ofproto.OFPTT_ALL, ofproto.OFPFC_DELETE,
+                                 0, 0, 0, OFP_BUFFER_NONE,
+                                 outport,
+                                 ofproto.OFPG_ANY,
+                                 0, parser.OFPMatch(), [])
+    
     if mod == RMT_DELETE and table_id == 0 and len(matches) == 0 and len(actions) == 0:
         return parser.OFPFlowMod(dp, 0, 0,
                                  ofproto.OFPTT_ALL, ofproto.OFPFC_DELETE,
@@ -182,7 +192,7 @@ def add_matches(flow_mod, matches):
         elif match._type == RFMT_VLAN_ID:
             flow_mod.match.set_vlan_vid(bin_to_int(match._value))
         elif TLV.optional(match):
-            log.info("Dropping unsupported Match (type: %s)" % match._type)
+            log.info("Dropping unsupported Match (type: %s)" % match._type)        
         else:
             log.warning("Failed to serialise Match (type: %s)" % match._type)
             return

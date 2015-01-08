@@ -27,25 +27,17 @@ class Table:
         self.dp_to_vs = {}
         self.vs_to_dp = {}
 
-    def update_dp_port(self, dp_id, dp_port, vs_id, vs_port):
-                # If there was a mapping for this DP port, reset it
+    # These two methods used to update the Table as a mapping changes
+    def add_entry(self, dp_id, dp_port, vs_id, vs_port):
         if (dp_id, dp_port) in self.dp_to_vs:
             old_vs_port = self.dp_to_vs[(dp_id, dp_port)]
             del self.vs_to_dp[old_vs_port]
         self.dp_to_vs[(dp_id, dp_port)] = (vs_id, vs_port)
         self.vs_to_dp[(vs_id, vs_port)] = (dp_id, dp_port)
     
-    def delete_dp_port(self, dp_id, dp_port, vs_id, vs_port):
+    def remove_entry(self, dp_id, dp_port, vs_id, vs_port):
         del self.dp_to_vs[(dp_id, dp_port)]
-        del self.vs_to_dp[(vs_id, vs_port)]
-            
-    def update_vs_port(self, dp_id, dp_port, vs_id, vs_port):
-        if (vs_id, vs_port) in self.vs_to_dp:
-            old_dp_port = self.vs_to_dp[(vs_id, vs_port)]
-            del self.dp_to_vs[old_dp_port]
-        self.vs_to_dp[(vs_id, vs_port)] = (dp_id, dp_port)
-        self.dp_to_vs[(dp_id, dp_port)] = (vs_id, vs_port)
-        
+        del self.vs_to_dp[(vs_id, vs_port)]        
 
     def dp_port_to_vs_port(self, dp_id, dp_port):
         try:
@@ -105,7 +97,8 @@ class RFProcessor(IPC.IPCMessageProcessor):
                                         msg.get_mod(),
                                         msg.get_matches(),
                                         msg.get_actions(),
-                                        msg.get_options())
+                                        msg.get_options(),
+                                        msg.get_outport())
             elif msg.get_mod() in (RMT_ADD_GROUP, RMT_DELETE_GROUP):
                 ofmsg = create_group_mod(dp,
                                          msg.get_mod(),
@@ -132,27 +125,16 @@ class RFProcessor(IPC.IPCMessageProcessor):
             vs_port = msg.get_vs_port()
             operation_id = msg.get_operation_id()
             
-            action = "Updating "
-            
-            if operation_id == DCT_UPDATE_DP:
-                self.table.update_dp_port(dp_id, dp_port, vs_id, vs_port)
-            elif operation_id == DCT_UPDATE_VS:
-                self.table.update_vs_port(dp_id, dp_port, vs_id, vs_port)
-            elif operation_id == DCT_DELETE_DP:
-                self.table.delete_dp_port(dp_id, dp_port, vs_id, vs_port)
-                # @TODO: Delete the flow rules that has in_port or output = dp_port
-                
-                action = "Deleting "
+            if operation_id == DCT_MAP_ADD:
+                self.table.add_entry(dp_id, dp_port, vs_id, vs_port)
+            elif operation_id == DCT_MAP_DELETE:
+                self.table.remove_entry(dp_id, dp_port, vs_id, vs_port)
             else:
                 log.info("Unknown operation")
                 
-            log.info(action + "vs-dp association (vs_id=%s, vs_port=%i, "
+            log.info("Updated vs-dp association (vs_id=%s, vs_port=%i, "
                      "dp_id=%s, dp_port=%i" % (dpid_to_str(vs_id), vs_port,
-                                               dpid_to_str(dp_id), dp_port))            
-        elif type_ == DATA_PORT_REQUEST:
-            switch = self._switches._get_switch(msg.get_dp_id())
-            dp_port = msg.get_dp_port()
-            
+                                               dpid_to_str(dp_id), dp_port))
             
         else:
             log.info("Got unknown msg type %d", type_)
