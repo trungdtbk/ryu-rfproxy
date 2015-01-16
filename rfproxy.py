@@ -26,6 +26,10 @@ class Table:
     def __init__(self):
         self.dp_to_vs = {}
         self.vs_to_dp = {}
+    
+    def remove_entry(self, dp_id, dp_port, vs_id, vs_port):
+        del self.dp_to_vs[(dp_id, dp_port)]
+        del self.vs_to_dp[(vs_id, vs_port)]
 
     def update_dp_port(self, dp_id, dp_port, vs_id, vs_port):
                 # If there was a mapping for this DP port, reset it
@@ -121,8 +125,15 @@ class RFProcessor(IPC.IPCMessageProcessor):
             dp_port = msg.get_dp_port()
             vs_id = msg.get_vs_id()
             vs_port = msg.get_vs_port()
-
-            self.table.update_dp_port(dp_id, dp_port, vs_id, vs_port)
+            
+            operation_id = msg.get_operation_id()
+            
+            if operation_id == DCT_MAP_ADD:
+                self.table.update_dp_port(dp_id, dp_port, vs_id, vs_port)
+            elif operation_id == DCT_MAP_DELETE:
+                self.table.remove_entry(dp_id, dp_port, vs_id, vs_port)
+            else:
+                log.info("Unknown operation")
             log.info("Updating vs-dp association (vs_id=%s, vs_port=%i, "
                      "dp_id=%s, dp_port=%i" % (dpid_to_str(vs_id), vs_port,
                                                dpid_to_str(dp_id), dp_port))
