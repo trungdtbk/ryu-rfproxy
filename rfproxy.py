@@ -32,7 +32,7 @@ class Table:
         del self.vs_to_dp[(vs_id, vs_port)]
 
     def update_dp_port(self, dp_id, dp_port, vs_id, vs_port):
-                # If there was a mapping for this DP port, reset it
+        # If there was a mapping for this DP port, reset it
         if (dp_id, dp_port) in self.dp_to_vs:
             old_vs_port = self.dp_to_vs[(dp_id, dp_port)]
             del self.vs_to_dp[old_vs_port]

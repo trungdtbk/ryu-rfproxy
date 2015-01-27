@@ -141,7 +141,9 @@ def add_command(ofproto, mod):
     if mod == RMT_ADD:
         return ofproto.OFPFC_ADD
     elif mod == RMT_DELETE:
-        return ofproto.OFPFC_DELETE_STRICT
+        # Change OFPFC_DELETE_STRICT to OFPFC_DELETE so that it's able to delete flow entries with matches of
+        # destination MAC or in_port only.
+        return ofproto.OFPFC_DELETE
     return None
 
 
