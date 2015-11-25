@@ -171,13 +171,17 @@ class RFProxy(app_manager.RyuApp):
         dp = ev.switch.dp
         dp_id = dp.id
         log.debug("INFO:rfproxy:Datapath is up (dp_id=%d)", dpid_to_str(dp_id))
-        for port in dp.ports:
-            if port <= dp.ofproto.OFPP_MAX:
-                msg = DatapathPortRegister(ct_id=self.ID, dp_id=dp_id,
-                                           dp_port=port)
-                self.ipc_send(RFSERVER_RFPROXY_CHANNEL, RFSERVER_ID, msg)
-                log.info("Registering datapath port (dp_id=%s, dp_port=%d)",
-                         dpid_to_str(dp_id), port)
+        if not is_rfvs(dp_id):
+            for port in ev.switch.ports:
+                if port.port_no <= dp.ofproto.OFPP_MAX:
+                    port_state = DP_PORT_UP
+                    if port.is_down():
+                        port_state = DP_PORT_DOWN
+                    msg = DatapathPortRegister(ct_id=self.ID, dp_id=dp_id,
+                                               dp_port=port.port_no, port_state=port_state)
+                    self.ipc_send(RFSERVER_RFPROXY_CHANNEL, RFSERVER_ID, msg)
+                    log.info("Registering datapath port (dp_id=%s, dp_port=%d)",
+                             dpid_to_str(dp_id), port.port_no)
 
     @set_ev_cls(event.EventSwitchLeave, MAIN_DISPATCHER)
     def handler_datapath_leave(self, ev):
@@ -243,3 +247,42 @@ class RFProxy(app_manager.RyuApp):
         else:
             log.info("Unmapped RFVS port (vs_id=%s, vs_port=%d)",
                      dpid_to_str(dp_id), in_port)
+
+    @set_ev_cls(ofp_event.EventOFPPortStatus, MAIN_DISPATCHER)
+    def port_status_handler(self, ev):
+        msg = ev.msg
+        dp = msg.datapath
+        reason = msg.reason
+        port_desc = msg.desc
+        port_no = msg.desc.port_no
+        port_state = msg.desc.state
+        ofproto = dp.ofproto
+        dp_id = dp.id
+        
+        if not is_rfvs(dp_id):
+            msg = None
+            if reason == ofproto.OFPPR_ADD:
+                port_state = DP_PORT_UP
+                if (port_desc.config & ofproto.OFPPC_PORT_DOWN) > 0 \
+                    or (port_desc.state & ofproto.OFPPS_LINK_DOWN) > 0:
+                        port_state = DP_PORT_DOWN
+
+                msg = DatapathPortRegister(ct_id=self.ID, dp_id=dp_id,
+                                           dp_port=port_no, port_state=port_state)
+                log.warn("Port %s added to switch %s (state %i)" % (port_no, dp_id, port_state))
+            elif reason == ofproto.OFPPR_MODIFY:
+                port_state = DP_PORT_UP
+                if (port_desc.config & ofproto.OFPPC_PORT_DOWN) > 0 \
+                    or (port_desc.state & ofproto.OFPPS_LINK_DOWN) > 0:
+                        port_state = DP_PORT_DOWN
+
+                msg = DatapathPortStatus(ct_id=self.ID, dp_id=dp_id, dp_port=port_no, port_state=port_state)
+                log.warn("Port %s modified from switch %s (state %i)" % (port_no, dp_id, port_state))
+            elif reason == ofproto.OFPPR_DELETE:
+                msg = DatapathPortRemove(ct_id=self.ID, dp_id=dp_id,
+                                         dp_port=port_no)
+                log.warn("Port %s deleted from switch %s" % (port_no, dp_id))
+            
+            if msg is not None:
+                self.ipc_send(RFSERVER_RFPROXY_CHANNEL, RFSERVER_ID, msg)
+

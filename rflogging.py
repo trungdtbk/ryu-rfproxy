@@ -9,3 +9,4 @@ handler.setFormatter(formatter)
 log.addHandler(handler)
 log.propagate = 0
 log.setLevel(logging.WARNING)
+#log.setLevel(logging.INFO)
